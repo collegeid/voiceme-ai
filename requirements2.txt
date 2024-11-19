@@ -1,0 +1,19 @@
+streamlit  # Ensure Streamlit version is compatible
+numpy # For numerical operations
+librosa  # For audio processing
+soundfile  # To handle audio files
+sounddevice  # For real-time audio recording
+scipy  # For DSP and signal processing
+torch  # PyTorch for loading and running models (ensure compatibility with your device's CUDA)
+transformers  # Hugging Face transformers for Wav2Vec2 model
+#ddsp  # For digital signal processing, like pitch adjustments and vibrato
+crepe
+intel_extension_for_pytorch
+huggingface_hub
+mysql-connector-python 
+bcrypt
+silero
+Flask 
+Flask-RESTful     
+werkzeug
+flask-restx
