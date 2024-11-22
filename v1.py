@@ -153,9 +153,9 @@ def create_connection():
     try:
         return mysql.connector.connect(
             host="localhost",  
-            user="root",  
-            password="vj280203",  
-            database="ai_voice_me",  
+            user="",  
+            password="",  
+            database="",  
             collation="utf8mb4_general_ci"
         )
     except mysql.connector.Error as err:
