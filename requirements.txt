@@ -14,3 +14,7 @@ Flask
 Flask-RESTful
 flask-restx
 requests
+torch 
+torchaudio 
+demucs
+spleeter
