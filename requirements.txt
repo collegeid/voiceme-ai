@@ -17,4 +17,4 @@ requests
 torch 
 torchaudio 
 demucs
-spleeter
+
