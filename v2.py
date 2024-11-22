@@ -24,7 +24,6 @@ from transformers import AutoModel
 from demucs import pretrained
 from demucs.audio import AudioFile
 from demucs.apply import apply_model as demucs_apply_model
-from spleeter.separator import Separator
 
 
 
