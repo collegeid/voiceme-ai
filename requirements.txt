@@ -1,0 +1,16 @@
+streamlit
+numpy
+librosa
+soundfile
+sounddevice
+scipy
+torch
+transformers
+intel_extension_for_pytorch
+huggingface_hub
+mysql-connector-python
+werkzeug
+Flask
+Flask-RESTful
+flask-restx
+requests

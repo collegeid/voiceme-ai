@@ -1,8 +1,8 @@
+
 from flask import Flask, request, jsonify
 from flask_restx import Api, Resource, Namespace
-
-# Importing your main.py functionality (make sure your main.py has the appropriate functions)
 import main
+import requests  # Add this import to send HTTP requests
 
 app = Flask(__name__)
 
@@ -52,8 +52,13 @@ class RegisterUser(Resource):
             username = args['username']
             password = args['password']
 
-            result = main.register_user(username, password)  # Function from main.py
-            return jsonify({"message": "User registered successfully", "data": result}), 201
+            # Send data to another server on port 8501
+            response = requests.post('http://localhost:8501/register', data={'username': username, 'password': password})
+
+            if response.status_code == 200:
+                return jsonify({"message": "User registered successfully", "data": response.json()}), 201
+            else:
+                return jsonify({"error": "Failed to register user", "details": response.text}), 400
         except Exception as e:
             return jsonify({"error": str(e)}), 400
 
@@ -67,8 +72,13 @@ class LoginUser(Resource):
             username = args['username']
             password = args['password']
 
-            token = main.login_user(username, password)  # Function from main.py
-            return jsonify({"message": "Login successful", "token": token}), 200
+            # Send data to another server on port 8501
+            response = requests.post('http://localhost:8501/login', data={'username': username, 'password': password})
+
+            if response.status_code == 200:
+                return jsonify({"message": "Login successful", "token": response.json().get('token')}), 200
+            else:
+                return jsonify({"error": "Login failed", "details": response.text}), 401
         except Exception as e:
             return jsonify({"error": str(e)}), 401
 
@@ -83,9 +93,15 @@ class UploadAudio(Resource):
 
             if not file:
                 return jsonify({"error": "No file provided"}), 400
-            
-            result = main.process_audio(file)  # Function from main.py
-            return jsonify({"message": "File uploaded successfully", "result": result}), 200
+
+            # Send file to another server on port 8501
+            files = {'file': file}
+            response = requests.post('http://localhost:8501/upload', files=files)
+
+            if response.status_code == 200:
+                return jsonify({"message": "File uploaded successfully", "result": response.json()}), 200
+            else:
+                return jsonify({"error": "File upload failed", "details": response.text}), 400
         except Exception as e:
             return jsonify({"error": str(e)}), 400
 
@@ -98,8 +114,13 @@ class GetHistory(Resource):
             args = history_parser.parse_args()
             user_id = args['user_id']
 
-            history = main.get_audio_history(user_id)  # Function from main.py
-            return jsonify({"data": history}), 200
+            # Send request to another server on port 8501 to get history
+            response = requests.get(f'http://localhost:8501/history', params={'user_id': user_id})
+
+            if response.status_code == 200:
+                return jsonify({"data": response.json()}), 200
+            else:
+                return jsonify({"error": "Failed to retrieve history", "details": response.text}), 400
         except Exception as e:
             return jsonify({"error": str(e)}), 400
 
@@ -113,11 +134,16 @@ class DeleteHistory(Resource):
             user_id = args['user_id']
             audio_id = args['audio_id']
 
-            result = main.delete_audio_history(user_id, audio_id)  # Function from main.py
-            return jsonify({"message": "History deleted successfully"}), 200
+            # Send request to another server on port 8501 to delete history
+            response = requests.delete(f'http://localhost:8501/history/delete', data={'user_id': user_id, 'audio_id': audio_id})
+
+            if response.status_code == 200:
+                return jsonify({"message": "History deleted successfully"}), 200
+            else:
+                return jsonify({"error": "Failed to delete history", "details": response.text}), 400
         except Exception as e:
             return jsonify({"error": str(e)}), 400
 
 if __name__ == '__main__':
     print(app.url_map)  # Print available routes
-    app.run(port=8502, debug=True)
+    app.run(port=8502, debug=True)  # Running Flask on port 8502

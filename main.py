@@ -4,24 +4,33 @@ import numpy as np
 import librosa
 import soundfile as sf
 import sounddevice as sd
-from io import BytesIO
-from scipy.io.wavfile import write
+import io
 import torch
-from silero import silero_stt, silero_tts, silero_te
-from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import time
 import subprocess
 import signal
+import transformers
 import sys
-# Attempt to load Intel optimizations if available
+import torch
+import scipy.signal as signal
+
+from io import BytesIO
+from scipy.io.wavfile import write
+from werkzeug.security import generate_password_hash, check_password_hash
+from torch import nn
+from transformers import AutoModel
+
+
+
+
+
 try:
     import intel_extension_for_pytorch as ipex
     ipex_installed = True
 except ImportError:
     ipex_installed = False
 
-# Detect hardware capabilities
 if torch.cuda.is_available():
     device = torch.device("cuda")
 elif torch.backends.mps.is_available():
@@ -35,7 +44,111 @@ else:
 
 print(f"Using device: {device}")
 
-# Database connection
+
+def load_voice_styles():
+    styles = {
+        "Default": {
+            "pitch_shift": 0,
+            "vibrato_depth": 0.0,
+            "vibrato_rate": 0.0,
+            "bass_boost": 1.0
+        },
+        "Style 1 - Soft Singing": {
+            "pitch_shift": 2,
+            "vibrato_depth": 0.3,
+            "vibrato_rate": 6.0,
+            "bass_boost": 1.2
+        },
+        "Style 2 - Deep Voice": {
+            "pitch_shift": -3,
+            "vibrato_depth": 0.2,
+            "vibrato_rate": 4.0,
+            "bass_boost": 1.5
+        },
+        "Style 3 - Robotic Tone": {
+            "pitch_shift": 0,
+            "vibrato_depth": 0.1,
+            "vibrato_rate": 8.0,
+            "bass_boost": 1.0
+        },
+        "Female AI - Bright Voice": {
+            "pitch_shift": 4,
+            "vibrato_depth": 0.5,
+            "vibrato_rate": 7.0,
+            "bass_boost": 0.8
+        },
+        "Female AI - Calm Voice": {
+            "pitch_shift": 3,
+            "vibrato_depth": 0.2,
+            "vibrato_rate": 4.0,
+            "bass_boost": 1.0
+        },
+        "Male AI - Deep Voice": {
+            "pitch_shift": -5,
+            "vibrato_depth": 0.3,
+            "vibrato_rate": 5.0,
+            "bass_boost": 1.6
+        },
+        "Male AI - Smooth Voice": {
+            "pitch_shift": -2,
+            "vibrato_depth": 0.1,
+            "vibrato_rate": 3.0,
+            "bass_boost": 1.3
+        },
+        "Style 4 - High-pitched Cartoonish": {
+            "pitch_shift": 7,
+            "vibrato_depth": 0.6,
+            "vibrato_rate": 9.0,
+            "bass_boost": 0.5
+        },
+        "Style 5 - Grunge Rock Voice": {
+            "pitch_shift": -2,
+            "vibrato_depth": 0.8,
+            "vibrato_rate": 3.0,
+            "bass_boost": 1.8
+        },
+        "Style 6 - Whispery Voice": {
+            "pitch_shift": 0,
+            "vibrato_depth": 0.9,
+            "vibrato_rate": 2.0,
+            "bass_boost": 0.7
+        },
+        "Style 7 - Hyperactive Voice": {
+            "pitch_shift": 5,
+            "vibrato_depth": 0.4,
+            "vibrato_rate": 6.0,
+            "bass_boost": 1.1
+        },
+        "Style 8 - Serious News Anchor": {
+            "pitch_shift": -1,
+            "vibrato_depth": 0.2,
+            "vibrato_rate": 2.5,
+            "bass_boost": 1.2
+        },
+        "Style 9 - Melodic Voice": {
+            "pitch_shift": 2,
+            "vibrato_depth": 0.4,
+            "vibrato_rate": 6.5,
+            "bass_boost": 1.1
+        },
+        "Style 10 - Hyper-realistic Female Voice": {
+            "pitch_shift": 3,
+            "vibrato_depth": 0.3,
+            "vibrato_rate": 5.0,
+            "bass_boost": 1.0
+        },
+        "Style 11 - Hyper-realistic Male Voice": {
+            "pitch_shift": -3,
+            "vibrato_depth": 0.2,
+            "vibrato_rate": 4.5,
+            "bass_boost": 1.4
+        }
+    }
+    return styles
+
+
+
+
 def create_connection():
     try:
         return mysql.connector.connect(
@@ -49,20 +162,28 @@ def create_connection():
         st.error(f"Error connecting to database: {err}")
         return None
 
-# User management functions
 def register_user(username, password):
     connection = create_connection()
     if connection:
         cursor = connection.cursor()
-        hashed_password = generate_password_hash(password)
         try:
+            cursor.execute("SELECT COUNT(*) FROM users WHERE username = %s", (username,))
+            result = cursor.fetchone()
+            if result[0] > 0:
+                return {"error": "Username already exists. Please choose a different username."}
+            
+            hashed_password = generate_password_hash(password)
             cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_password))
             connection.commit()
+            return {"message": "User registered successfully"}
         except mysql.connector.Error as err:
             st.error(f"Error registering user: {err}")
+            return {"error": f"Error registering user: {err}"}
         finally:
             cursor.close()
             connection.close()
+    else:
+        return {"error": "Failed to connect to the database."}
 
 def authenticate_user(username, password):
     connection = create_connection()
@@ -76,34 +197,33 @@ def authenticate_user(username, password):
             return user
     return None
 
-import io
-import numpy as np
-import soundfile as sf
-import mysql.connector
 
-# Store audio details in the database
 def store_audio(user_id, file_name, audio_data):
     try:
-        # Check if the audio_data is a numpy.ndarray (i.e., recorded audio)
+        # Convert audio data to bytes if it's a numpy array
         if isinstance(audio_data, np.ndarray):
-            # Convert numpy array audio_data to bytes using BytesIO
             byte_io = io.BytesIO()
-            # Assuming the audio is stored as a numpy array and sample rate is 96000 (high definition audio)
-            sf.write(byte_io, audio_data, 96000, format='WAV')  # Adjust sample rate if necessary
-            byte_io.seek(0)  # Move the pointer to the beginning of the byte stream
+            sf.write(byte_io, audio_data, 96000, format='WAV')  
+            byte_io.seek(0)  
             audio_data_bytes = byte_io.read()
         else:
-            # If audio_data is already in bytes (e.g., uploaded .wav file)
-            audio_data_bytes = audio_data  # No conversion needed
+            audio_data_bytes = audio_data  
 
-        # Now audio_data_bytes contains the data to be stored in the DB
         connection = create_connection()
         if connection:
             cursor = connection.cursor()
             try:
-                cursor.execute("INSERT INTO audio_history (user_id, file_name, audio_data) VALUES (%s, %s, %s)", 
-                               (user_id, file_name, audio_data_bytes))
-                connection.commit()
+                cursor.execute("SELECT COUNT(*) FROM audio_history WHERE user_id = %s AND file_name = %s", 
+                               (user_id, file_name))
+                result = cursor.fetchone()
+                
+                if result[0] > 0:
+                    st.warning(f"The file '{file_name}' already exists. Consider change or renaming or updating.")
+                else:
+                    cursor.execute("INSERT INTO audio_history (user_id, file_name, audio_data) VALUES (%s, %s, %s)", 
+                                   (user_id, file_name, audio_data_bytes))
+                    connection.commit()
+                    st.success("Audio stored successfully.")
             except mysql.connector.Error as err:
                 st.error(f"Error storing audio: {err}")
             finally:
@@ -127,35 +247,28 @@ def fetch_audio_history(user_id):
             cursor.close()
             connection.close()
 
-def delete_audio(user_id, file_name):
-    connection = create_connection()
-    if connection:
-        cursor = connection.cursor()
-        try:
+def delete_audio_from_history(user_id, file_name, username):
+    try:
+        connection = create_connection()
+        if connection:
+            cursor = connection.cursor()
             cursor.execute("DELETE FROM audio_history WHERE user_id = %s AND file_name = %s", (user_id, file_name))
             connection.commit()
-        except mysql.connector.Error as err:
-            st.error(f"Error deleting audio: {err}")
-        finally:
-            cursor.close()
+
+            file_path = os.path.join("uploads", username, file_name)
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                st.success(f"Audio file '{file_name}' has been deleted from history and storage.")
+                st.rerun()
+            else:
+                st.warning(f"Audio file '{file_name}' not found in storage.")
+            
             connection.close()
-
-# Load voice style models
-def load_voice_styles():
-    try:
-        models = {
-            "None": None,
-            "Silero STT": silero_stt(device=device)[0],
-            "Silero TTS (Style A)": silero_tts(device=device, language="ru")[0],
-            "Silero TTS (Style B)": silero_tts(device=device, language="ru")[0],
-            "Silero TE": silero_te()[0],
-        }
-        return models
+    except mysql.connector.Error as err:
+        st.error(f"Error deleting audio file from history: {err}")
     except Exception as e:
-        st.error(f"Error loading voice styles: {e}")
-        return {"None": None}
+        st.error(f"Error deleting audio file: {e}")
 
-# Audio processing functions
 def adjust_pitch_and_vibrato(audio, sr, pitch_shift=0, vibrato_depth=0.5, vibrato_rate=5):
     try:
         audio = librosa.effects.pitch_shift(y=audio, sr=sr, n_steps=pitch_shift)
@@ -166,11 +279,47 @@ def adjust_pitch_and_vibrato(audio, sr, pitch_shift=0, vibrato_depth=0.5, vibrat
         st.error(f"Error adjusting audio: {e}")
         return audio
 
+def apply_bass_boost(audio_data, bass_boost, sr=96000):
+    """
+    Apply bass boost effect to the audio data.
+    """
+    nyquist = 0.5 * sr  
+    low = 100 / nyquist  
+    b, a = signal.butter(1, low, btype='low')  
+    filtered_audio = signal.filtfilt(b, a, audio_data)
+    boosted_audio = audio_data + (filtered_audio * (bass_boost - 1.0))  # Apply bass boost
+
+    return boosted_audio
+
+import librosa
+
+def apply_voice_conversion(audio_data, sr, voice_style, target_sr=96000):
+    try:
+        if sr != target_sr:
+            audio_data = librosa.resample(audio_data, orig_sr=sr, target_sr=target_sr)
+            sr = target_sr  
+        style_params = load_voice_styles().get(voice_style, {})
+        pitch_shift = style_params.get("pitch_shift", 0)
+        vibrato_depth = style_params.get("vibrato_depth", 0.0)
+        vibrato_rate = style_params.get("vibrato_rate", 0.0)
+        bass_boost = style_params.get("bass_boost", 1.0)
+
+        audio_data = adjust_pitch_and_vibrato(audio_data, sr, pitch_shift, vibrato_depth, vibrato_rate)
+        audio_data = apply_bass_boost(audio_data, bass_boost, sr)
+
+        return audio_data
+    except Exception as e:
+        st.error(f"Error during voice conversion: {e}")
+        return audio_data
+
 def save_audio_file(file_name, audio_data):
+    user_folder = st.session_state.get('username', 'guest')  # Default to 'guest' if username is not set
     timestamp = int(time.time())
     unique_file_name = f"{file_name}"
-    file_path = os.path.join("uploads", unique_file_name)
+    
+    file_path = os.path.join("uploads", user_folder, unique_file_name)
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    
     try:
         with open(file_path, "wb") as f:
             f.write(audio_data)
@@ -178,7 +327,6 @@ def save_audio_file(file_name, audio_data):
     except Exception as e:
         st.error(f"Error saving audio file: {e}")
         return None
-
 def record_audio(duration):
     try:
         st.session_state.is_recording = True
@@ -194,19 +342,22 @@ def record_audio(duration):
 
 
 def resample_audio(audio_data, sr, target_sr=96000):
+
+    if audio_data is None:
+        raise ValueError("Audio data is None, cannot resample.")
     if sr is None:
         raise ValueError("Sample rate (sr) is None, cannot resample audio.")
+    
     if sr != target_sr:
         audio_data = librosa.resample(audio_data, orig_sr=sr, target_sr=target_sr)
+    
     return audio_data
 
 def start_flask():
-    # Start Flask application in a new process
     process = subprocess.Popen(["python", "flask_api.py"])
     return process
 
 def stop_flask(process):
-    # Gracefully terminate Flask process
     process.terminate()
     process.wait()  
 
@@ -215,8 +366,8 @@ def main():
  try:
     print("Starting Flask application...")
     flask_process = start_flask()
-    st.set_page_config(page_title="A.I Voice Me", page_icon=":microphone:", layout="wide")
-    st.title("A.I. Voice Me")
+    st.set_page_config(page_title="Voice Me", page_icon=":microphone:", layout="wide")
+    st.title("Voice Me")
 
     if 'logged_in' not in st.session_state:
         st.session_state.logged_in = False
@@ -313,26 +464,49 @@ def main():
                     connection.close()
 
                     audio_data, sr = librosa.load(io.BytesIO(audio_data_bytes), sr=None)
+                    
+                    delete_button = st.button("Delete Audio from History and Storage")
+                    if delete_button:
+                       delete_audio_from_history(user_id, selected_file, st.session_state.username)
+  
                     st.audio(audio_data, format='audio/wav', sample_rate=sr)
 
                 except Exception as e:
                      st.error(f"Error loading audio from history: {e}")
 
         if audio_data is not None:
-            pitch_shift = st.slider("Pitch Shift (in Semitones)", -12, 12, 0)
-            vibrato_depth = st.slider("Vibrato Depth", 0.0, 1.0, 0.5)
-            vibrato_rate = st.slider("Vibrato Rate (Hz)", 1, 10, 5)
-            voice_style = st.selectbox("Choose Voice Style", list(models.keys()))
+           
+           voice_style = st.selectbox("Choose Voice Style", list(load_voice_styles().keys()))
+           if voice_style != "None":
 
+            style_params = load_voice_styles()[voice_style]
+
+            pitch_shift = style_params["pitch_shift"]
+            vibrato_depth = style_params["vibrato_depth"]
+            vibrato_rate = style_params["vibrato_rate"]
+            bass_boost = style_params["bass_boost"]
+
+
+            pitch_shift = st.slider("Pitch Shift (in Semitones)", -12, 12, pitch_shift)
+            vibrato_depth = st.slider("Vibrato Depth", 0.0, 1.0, vibrato_depth)
+            vibrato_rate = st.slider("Vibrato Rate (Hz)", 1.0, 10.0, vibrato_rate, step=0.1)
+            bass_boost = st.slider("Bass Boost", 0.5, 2.0, bass_boost, step=0.1)
+
+            processed_audio = apply_voice_conversion(audio_data, sr, voice_style, 96000)
+            
             processed_audio = adjust_pitch_and_vibrato(audio_data, sr, pitch_shift, vibrato_depth, vibrato_rate)
+            
+            processed_audio = apply_bass_boost(processed_audio, bass_boost)
+
             processed_audio = resample_audio(processed_audio, sr, target_sr=96000)
 
             output = BytesIO()
-            sf.write(output, processed_audio, 96000, format='wav')
+            sf.write(output, processed_audio, 96000, format='WAV')
             output.seek(0)
-
+            
+            filename = f"{st.session_state.username}_{voice_style.replace(' ', '_')}_processed_audio.wav"
             st.audio(output, format='audio/wav')
-            st.download_button("Download Processed Audio", output, "processed_audio.wav")
+            st.download_button("Download Processed Audio", output, file_name=filename)
         else:
             st.warning("Please Record/Select/Input The Audio First.")
     else:
@@ -343,8 +517,11 @@ def main():
 
         if option == "Register" and st.button("Register"):
             if username and password:
-                register_user(username, password)
-                st.success("Registration successful! Please log in.")
+                response = register_user(username, password)
+                if 'error' in response:
+                    st.error(response['error'])
+                else:
+                    st.success("Registration successful! Please log in.")
             else:
                 st.error("Please fill in all fields.")
 
