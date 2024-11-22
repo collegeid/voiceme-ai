@@ -312,8 +312,8 @@ def apply_voice_conversion(audio_data, sr, voice_style, target_sr=96000):
         st.error(f"Error during voice conversion: {e}")
         return audio_data
 
-def save_audio_file(file_name, audio_data):
-    user_folder = st.session_state.get('username', 'guest')  # Default to 'guest' if username is not set
+def save_audio_file(file_name, audio_data, username):
+    user_folder = username  
     timestamp = int(time.time())
     unique_file_name = f"{file_name}"
     
@@ -408,7 +408,14 @@ def main():
                 try:
                     audio_data, sr = librosa.load(audio_file, sr=None)
                     st.audio(audio_file, format='audio/wav')
-                    store_audio(user_id, audio_file.name, audio_file.read())
+                    username = st.session_state.username
+                    file_name = f"{username}_uploaded_audio_{int(time.time())}.wav"  
+                    file_path = save_audio_file(file_name, audio_file.read(), username)
+                    if file_path:
+                      st.write(f"Audio file saved as: {file_name}")
+                      user_id = st.session_state.user_id 
+                      store_audio(user_id, file_name, audio_file.read())  
+                
                 except Exception as e:
                     st.error(f"Error processing uploaded file: {e}")
 
@@ -430,11 +437,11 @@ def main():
               
                 sr = 96000
                 st.audio(st.session_state.recorded_audio, format='audio/wav', sample_rate=96000)
-                username =st.session_state.username
+                username = st.session_state.username
                 file_name = f"{username}_recorded_audio_{int(time.time())}.wav"  
               
                 audio_data = resample_audio(st.session_state.recorded_audio, sr=96000, target_sr=96000)
-                file_path = save_audio_file(file_name, audio_data)
+                file_path = save_audio_file(file_name, audio_data, username)
         
                 if file_path:
                    st.write(f"Audio file saved as: {file_name}")
@@ -455,22 +462,27 @@ def main():
            
             if selected_file:
                 st.write(f"Selected file: {selected_file}")
+                
                 try:
-                    connection = create_connection()
-                    cursor = connection.cursor()
-                    cursor.execute("SELECT audio_data FROM audio_history WHERE user_id = %s AND file_name = %s", 
-                           (user_id, selected_file))
-                    audio_data_bytes = cursor.fetchone()[0]
-                    connection.close()
-
-                    audio_data, sr = librosa.load(io.BytesIO(audio_data_bytes), sr=None)
+                    user_audio_path = f"uploads/{st.session_state.username}/{selected_file}"
+                   
+                   
+                    if os.path.exists(user_audio_path):
+                        try:
+                   
+                            audio_data, sr = librosa.load(user_audio_path, sr=None)
                     
-                    delete_button = st.button("Delete Audio from History and Storage")
-                    if delete_button:
-                       delete_audio_from_history(user_id, selected_file, st.session_state.username)
+                            delete_button = st.button("Delete Audio from History and Storage")
+                            if delete_button:
+                               delete_audio_from_history(user_id, selected_file, st.session_state.username)
   
-                    st.audio(audio_data, format='audio/wav', sample_rate=sr)
+                            st.audio(audio_data, format='audio/wav', sample_rate=sr)
 
+                        except Exception as e:
+                         st.error(f"Error loading audio with librosa: {e}")
+                    else:
+                        st.error(f"Audio file {selected_file} not found in the specified folder.")
+        
                 except Exception as e:
                      st.error(f"Error loading audio from history: {e}")
 
