@@ -19,9 +19,10 @@ flask-restx
 requests
 demucs
 crepe
-#optional for torch 2.5.0 -> intel_extension_for_pytorch
+#optional for torch 2.5.0 intel_extension_for_pytorch
 librosa  
 streamlit
 typer
 # manually running pip install -U git+https://github.com/facebookresearch/demucs#egg=demucs
 #recommendation torch==2.5.0
+pyjwt
