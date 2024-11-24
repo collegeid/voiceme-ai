@@ -1,20 +1,27 @@
-streamlit
+tensorflow
 numpy
-librosa
-soundfile
-sounddevice
-scipy
-torch
-transformers
-intel_extension_for_pytorch
+soundfile 
+sounddevice 
+torch 
+torchaudio
+sentencepiece
+transformers 
+tensorflow
+tensorflow-cpu
+tensorflow-gpu
 huggingface_hub
-mysql-connector-python
+mysql-connector-python 
+bcrypt
+Flask 
+Flask-RESTful     
 werkzeug
-Flask
-Flask-RESTful
 flask-restx
 requests
-torch 
-torchaudio 
 demucs
-
+crepe
+#optional for torch 2.5.0 -> intel_extension_for_pytorch
+librosa  
+streamlit
+typer
+# manually running pip install -U git+https://github.com/facebookresearch/demucs#egg=demucs
+#recommendation torch==2.5.0
