@@ -14,7 +14,6 @@ import transformers
 import sys
 import torch
 import scipy.signal as signal
-import Separator
 
 from io import BytesIO
 from scipy.io.wavfile import write
@@ -24,28 +23,10 @@ from transformers import AutoModel
 
 from demucs import pretrained
 from demucs.audio import AudioFile
-from demucs.apply import apply_model as demucs_apply_model
+from demucs.apply import apply_model 
+from demucs.pretrained import get_model
 
 
-
-try:
-    import intel_extension_for_pytorch as ipex
-    ipex_installed = True
-except ImportError:
-    ipex_installed = False
-
-if torch.cuda.is_available():
-    device = torch.device("cuda")
-elif torch.backends.mps.is_available():
-    device = torch.device("mps")
-elif ipex_installed:
-    device = torch.device("cpu")
-    print("Using Intel CPU with IPEX optimizations.")
-else:
-    device = torch.device("cpu")
-    print("Using CPU without optimizations.")
-
-print(f"Using device: {device}")
 
 
 def load_voice_styles():
@@ -245,23 +226,19 @@ def display_saved_processed_files():
     user_id = st.session_state.user_id
     user_folder = f"uploads/{st.session_state.username}/"
     
-    # Fetch saved files from the database or the folder
-    saved_files = fetch_saved_processed_files(user_id)  # Function to fetch from DB or folder
+    saved_files = fetch_saved_processed_files(user_id)  
 
     if saved_files:
         st.write("### Saved Processed Files:")
         
-        # Display saved processed files
         for file in saved_files:
             st.write(file)
             
-            # Play the file
             file_path = f"{user_folder}/{file}"
             if os.path.exists(file_path):
                 audio_data, sr = librosa.load(file_path, sr=None)
                 st.audio(audio_data, format='audio/wav', sample_rate=sr)
 
-            # Delete button for each file
             if st.button(f"Delete {file}"):
                 if delete_saved_processed_audio(user_id, file):
                     st.success(f"{file} has been deleted successfully.")
@@ -408,7 +385,7 @@ def apply_bass_boost(audio_data, bass_boost, sr=96000):
     low = 100 / nyquist  
     b, a = signal.butter(1, low, btype='low')  
     filtered_audio = signal.filtfilt(b, a, audio_data)
-    boosted_audio = audio_data + (filtered_audio * (bass_boost - 1.0))  # Apply bass boost
+    boosted_audio = audio_data + (filtered_audio * (bass_boost - 1.0))  
 
     return boosted_audio
 
@@ -484,77 +461,61 @@ def stop_flask(process):
 
 def boost_volume(audio_data, factor=2.0):
     """Boost the audio volume by a given factor."""
-    # Clip to avoid overflow, ensuring it stays in the valid range
     return np.clip(audio_data * factor, -1.0, 1.0)
 
-def denoise_audio(audio_data, sr):
-    """
-    Applies denoising to the audio using different models for mono and stereo.
-    Handles mono or stereo audio dynamically and returns output in the same format.
-    """
-    try:
-        # Check if the audio is mono or stereo
-        is_mono = len(audio_data.shape) == 1
-
-        if is_mono:
-            # Use Spleeter for mono audio
-            separator = Separator('spleeter:2stems')  # You may need to adjust model choice
-            # Convert to stereo for spleeter (required input format)
-            audio_data_stereo = np.stack([audio_data, audio_data], axis=0)
-            # Separate the audio
-            prediction = separator.separate(audio_data_stereo.T)
-            enhanced_audio = prediction['vocals'].T[0]  # Extract the vocal component
-        else:
-            # Use Demucs for stereo audio
-            device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-            model = demucs_pretrained.get_model('htdemucs')
-            model.to(device)  # Move to appropriate device
-
-            # Normalize audio before processing
-            audio_data = np.clip(audio_data, -1.0, 1.0)
-
-            # Convert to tensor format required by Demucs
-            tensor_audio = torch.tensor(audio_data).unsqueeze(0).to(device)  # Shape: (Batch, Channels, Samples)
-
-            # Apply the model
-            enhanced_audio = demucs_apply_model(model, tensor_audio, split=True)  # Process the audio
-
-            # Convert the result back to numpy array
-            enhanced_audio = enhanced_audio[0].cpu().numpy()  # Shape: (Channels, Samples)
-
-        # Post-process: normalize and optionally boost volume
-        enhanced_audio = enhanced_audio / np.max(np.abs(enhanced_audio))  # Normalize [-1.0, 1.0]
-
-        return enhanced_audio
-
-    except Exception as e:
-        print(f"Error in denoise_audio: {str(e)}")  # Debugging log
-        st.error(f"Error during denoising: {e}")
-        return audio_data
-def normalize_audio(audio_data):
-    """Normalize the audio data to the range of int16."""
-    if audio_data.dtype == np.float32 or audio_data.dtype == np.float64:
-        max_val = np.iinfo(np.int16).max
-        min_val = np.iinfo(np.int16).min
-        audio_data = np.clip(audio_data * max_val, min_val, max_val).astype(np.int16)
-    return audio_data
-
-
 def dynamic_gain(audio_data, target_peak=0.8):
+    """Adjust audio gain dynamically to a target peak level."""
     peak = np.max(np.abs(audio_data))
-    
     if peak == 0:
         return audio_data  
 
     gain = target_peak / peak
     adjusted_audio = audio_data * gain
-    adjusted_audio = np.clip(adjusted_audio, -1.0, 1.0)
+    return np.clip(adjusted_audio, -1.0, 1.0)
 
-    return adjusted_audio
+def denoise_audio(audio_data, sr):
 
+    try:
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        model = pretrained.get_model('htdemucs')  
+        model.to(device)
+        model.eval()  
+        is_mono = len(audio_data.shape) == 1
+        if is_mono:
+            st.write("Mono Audio Detected")
+        else:
+            st.write("Stereo Audio Detected")
+
+        if is_mono:
+            audio_data = np.stack([audio_data, audio_data], axis=0) 
+        audio_data = np.clip(audio_data, -1.0, 1.0)
+
+        tensor_audio = torch.tensor(audio_data, dtype=torch.float32).unsqueeze(0).to(device)
+
+        # Apply HTDemucs
+        with torch.no_grad():
+            sources = apply_model(model, tensor_audio, device=device)  # Output shape: (batch, stems, channels, samples)
+
+        # Extract the vocals or primary clean signal
+        enhanced_audio = sources[0, 0].cpu().numpy()  # Extract the "vocals" stem (channel 0)
+
+        max_val = np.max(np.abs(enhanced_audio))
+        if max_val > 0:
+            enhanced_audio /= max_val
+
+        if is_mono:
+            return enhanced_audio[0]
+        else:
+            return enhanced_audio
+
+    except Exception as e:
+        st.error(f"Error during denoising: {e}")
+        print(f"Error in denoise_audio: {e}")
+        return audio_data
 
 def audio_enhancement_ui():
     st.write("### Audio Enhancement")
+    
     source_option = st.radio("Choose Source", ["History Audio", "Saved Processed Audio"])
 
     if source_option == "History Audio":
@@ -565,7 +526,7 @@ def audio_enhancement_ui():
         user_id = st.session_state.user_id
         saved_files = fetch_saved_processed_files(user_id)
         selected_file = st.selectbox("Select from Saved Processed Files", saved_files)
-    
+
     if selected_file:
         audio_path = f"uploads/{st.session_state.username}/{selected_file}"
         if os.path.exists(audio_path):
@@ -573,7 +534,7 @@ def audio_enhancement_ui():
             st.audio(audio_data, format='audio/wav', sample_rate=sr)
 
             st.write("#### Enhancement Options")
-            denoise = st.checkbox("Apply Noise Reduction (Deep Learning)")
+            denoise = st.checkbox("Apply Noise Reduction")
 
             if st.button("Process Audio"):
                 if denoise:
@@ -583,32 +544,28 @@ def audio_enhancement_ui():
                     enhanced_audio = audio_data
 
                 try:
-                    # Ensure the enhanced audio is properly formatted
-                    if len(enhanced_audio.shape) == 1:  # Mono audio
-                        enhanced_audio = enhanced_audio[np.newaxis, :]  # Convert to (1, samples) for mono
-                    elif enhanced_audio.shape[0] == 1:  # Single channel (Mono)
-                        enhanced_audio = enhanced_audio[0]  # Flatten to 1D for playback
+                    if len(enhanced_audio.shape) == 1:  
+                        enhanced_audio = enhanced_audio[np.newaxis, :] 
+                    elif enhanced_audio.shape[0] == 2: 
+                        enhanced_audio = enhanced_audio.T  
 
-                    # Handle stereo audio
-                    if enhanced_audio.ndim == 2 and enhanced_audio.shape[0] == 2:  # Stereo
-                        enhanced_audio = enhanced_audio.T  # Convert to (samples, 2) for stereo
+                    enhanced_audio = np.float32(enhanced_audio)
 
-                    output = BytesIO()  # Initialize BytesIO buffer
+                    output = BytesIO() 
                     st.write(f"Enhanced audio for saving, shape: {enhanced_audio.shape}, dtype: {enhanced_audio.dtype}")
 
-                    sf.write(output, enhanced_audio, sr, format='WAV')  # Write enhanced audio to the buffer
-                    output.seek(0)  # Rewind the buffer for reading
-                    st.audio(output, format='audio/wav')  # Play the enhanced audio
+                    sf.write(output, enhanced_audio.T, sr, format='WAV') 
+                    output.seek(0) 
+                    st.audio(output, format='audio/wav')  
 
                     filename = f"{selected_file.split('.')[0]}_enhanced.wav"
                     st.download_button("Download Enhanced Audio", output, file_name=filename)
 
-                    # Optionally save the enhanced audio
                     if st.button("Save Enhanced Audio"):
                         save_audio_path = f"uploads/{st.session_state.username}/{filename}"
                         os.makedirs(os.path.dirname(save_audio_path), exist_ok=True)
                         try:
-                            sf.write(save_audio_path, enhanced_audio, sr, format='WAV')
+                            sf.write(save_audio_path, enhanced_audio.T, sr, format='WAV')
                             store_processed_audio(st.session_state.user_id, filename, enhanced_audio)
                             st.success(f"Enhanced audio saved as {filename}")
                         except Exception as e:
@@ -618,7 +575,8 @@ def audio_enhancement_ui():
         else:
             st.error(f"Audio file {selected_file} not found.")
 
-            
+
+
 def main():
     flask_process = None
     try:
