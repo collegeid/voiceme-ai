@@ -159,9 +159,13 @@ def register_user(username, password):
             hashed_password = generate_password_hash(password)
             cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_password))
             connection.commit()
-            return {"message": "User registered successfully"}
+            
+            user_folder = os.path.join('uploads', username)
+            if not os.path.exists(user_folder):
+                os.makedirs(user_folder) 
+
+            return {"message": "User registered successfully and folder created."}
         except mysql.connector.Error as err:
-            st.error(f"Error registering user: {err}")
             return {"error": f"Error registering user: {err}"}
         finally:
             cursor.close()
@@ -452,7 +456,7 @@ def resample_audio(audio_data, sr, target_sr=96000):
     return audio_data
 
 def start_flask():
-    process = subprocess.Popen(["python", "flask_api.py"])
+    process = subprocess.Popen(["python", "flask_v2.py"])
     return process
 
 def stop_flask(process):
