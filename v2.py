@@ -766,7 +766,18 @@ def main():
                                 processed_audio, sr = librosa.load(saved_audio_path, sr=None)
                                 st.audio(processed_audio, format='audio/wav', sample_rate=sr)
                               
+                                output = BytesIO()
+                                sf.write(output, processed_audio, sr, format='WAV')
+                                output.seek(0)
                                 delete_button = st.button("Delete Saved Audio")
+
+                                st.download_button(
+                                   label="Download Processed Audio",
+                                   data=output,
+                                   file_name=selected_saved_file,
+                                   mime='audio/wav'
+                                )
+
                                 if delete_button:
                                     delete_saved_processed_audio(st.session_state.user_id, selected_saved_file)
                                     st.rerun()    
