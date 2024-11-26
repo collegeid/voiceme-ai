@@ -37,98 +37,129 @@ def load_voice_styles():
             "vibrato_rate": 0.0,
             "bass_boost": 1.0
         },
-        "Style 1 - Soft Singing": {
+        "Soft Singing": {
             "pitch_shift": 2,
             "vibrato_depth": 0.3,
             "vibrato_rate": 6.0,
             "bass_boost": 1.2
         },
-        "Style 2 - Deep Voice": {
+        "Deep Voice": {
             "pitch_shift": -3,
             "vibrato_depth": 0.2,
             "vibrato_rate": 4.0,
             "bass_boost": 1.5
         },
-        "Style 3 - Robotic Tone": {
+        "Robotic Tone": {
             "pitch_shift": 0,
             "vibrato_depth": 0.1,
             "vibrato_rate": 8.0,
             "bass_boost": 1.0
         },
-        "Female AI - Bright Voice": {
+        "Bright Female Voice": {
             "pitch_shift": 4,
             "vibrato_depth": 0.5,
             "vibrato_rate": 7.0,
             "bass_boost": 0.8
         },
-        "Female AI - Calm Voice": {
+        "Calm Female Voice": {
             "pitch_shift": 3,
             "vibrato_depth": 0.2,
             "vibrato_rate": 4.0,
             "bass_boost": 1.0
         },
-        "Male AI - Deep Voice": {
+        "Deep Male Voice": {
             "pitch_shift": -5,
             "vibrato_depth": 0.3,
             "vibrato_rate": 5.0,
             "bass_boost": 1.6
         },
-        "Male AI - Smooth Voice": {
+        "Smooth Male Voice": {
             "pitch_shift": -2,
             "vibrato_depth": 0.1,
             "vibrato_rate": 3.0,
             "bass_boost": 1.3
         },
-        "Style 4 - High-pitched Cartoonish": {
+        "High-pitched Cartoon Voice": {
             "pitch_shift": 7,
             "vibrato_depth": 0.6,
             "vibrato_rate": 9.0,
             "bass_boost": 0.5
         },
-        "Style 5 - Grunge Rock Voice": {
+        "Grunge Rock Voice": {
             "pitch_shift": -2,
             "vibrato_depth": 0.8,
             "vibrato_rate": 3.0,
             "bass_boost": 1.8
         },
-        "Style 6 - Whispery Voice": {
+        "Whispery Voice": {
             "pitch_shift": 0,
             "vibrato_depth": 0.9,
             "vibrato_rate": 2.0,
             "bass_boost": 0.7
         },
-        "Style 7 - Hyperactive Voice": {
+        "Hyperactive Voice": {
             "pitch_shift": 5,
             "vibrato_depth": 0.4,
             "vibrato_rate": 6.0,
             "bass_boost": 1.1
         },
-        "Style 8 - Serious News Anchor": {
+        "News Anchor Voice": {
             "pitch_shift": -1,
             "vibrato_depth": 0.2,
             "vibrato_rate": 2.5,
             "bass_boost": 1.2
         },
-        "Style 9 - Melodic Voice": {
+        "Melodic Voice": {
             "pitch_shift": 2,
             "vibrato_depth": 0.4,
             "vibrato_rate": 6.5,
             "bass_boost": 1.1
         },
-        "Style 10 - Hyper-realistic Female Voice": {
+        "Female AI Voice": {
             "pitch_shift": 3,
             "vibrato_depth": 0.3,
             "vibrato_rate": 5.0,
             "bass_boost": 1.0
         },
-        "Style 11 - Hyper-realistic Male Voice": {
+        "Male AI Voice": {
             "pitch_shift": -3,
             "vibrato_depth": 0.2,
             "vibrato_rate": 4.5,
             "bass_boost": 1.4
+        },
+        "Warm Voice": {
+            "pitch_shift": 1,
+            "vibrato_depth": 0.1,
+            "vibrato_rate": 3.5,
+            "bass_boost": 1.0
+        },
+        "Crisp Female Voice": {
+            "pitch_shift": 3,
+            "vibrato_depth": 0.2,
+            "vibrato_rate": 5.0,
+            "bass_boost": 1.2
+        },
+        "Smooth Deep Voice": {
+            "pitch_shift": -4,
+            "vibrato_depth": 0.3,
+            "vibrato_rate": 2.0,
+            "bass_boost": 1.7
+        },
+        "Subtle Whisper": {
+            "pitch_shift": 0,
+            "vibrato_depth": 0.5,
+            "vibrato_rate": 1.5,
+            "bass_boost": 0.6
+        },
+        "Clear Announcer Voice": {
+            "pitch_shift": -1,
+            "vibrato_depth": 0.1,
+            "vibrato_rate": 3.0,
+            "bass_boost": 1.3
         }
     }
     return styles
+
 
 
 
@@ -253,20 +284,21 @@ def display_saved_processed_files():
         st.write("No processed audio files found.")
 
 def fetch_saved_processed_files(user_id):
-
     try:
         connection = create_connection()
         cursor = connection.cursor()
-        
+
         cursor.execute("SELECT file_name FROM processed_audio WHERE user_id = %s", (user_id,))
-        files = cursor.fetchall()
+        files_in_db = cursor.fetchall()
         connection.close()
 
-        if files:
-            return [file[0] for file in files]
-        else:
-            user_folder = f"uploads/{st.session_state.username}/"
-            return [f for f in os.listdir(user_folder) if f.endswith(".wav")]
+        db_files = [file[0] for file in files_in_db]
+        user_folder = f"uploads/{st.session_state.username}/"
+        all_files = [f for f in os.listdir(user_folder) if f.endswith(".wav")]
+        valid_files = [f for f in all_files if f in db_files]
+        
+        return valid_files
+
     except Exception as e:
         st.error(f"Error fetching saved files: {e}")
         return []
@@ -280,9 +312,13 @@ def delete_saved_processed_audio(user_id, filename):
         cursor.execute("DELETE FROM processed_audio WHERE user_id = %s AND file_name = %s", (user_id, filename))
         connection.commit()
 
-        file_path = f"uploads/{st.session_state.username}/{filename}"
+        file_path = os.path.join("uploads", st.session_state.username, file_name)
         if os.path.exists(file_path):
             os.remove(file_path)
+            st.success(f"Audio file '{file_name}' has been deleted from history and storage.")
+        else:
+            st.warning(f"Audio file '{file_name}' not found in storage.")
+            
 
         connection.close()
         return True
@@ -306,6 +342,7 @@ def store_processed_audio(user_id, filename, audio_data):
         
         connection.commit()
         connection.close()
+        st.success(f"Processed Audio Successfully Saved to database: {filename}")
         return True
     except Exception as e:
         st.error(f"Error saving processed audio to database: {e}")
@@ -361,7 +398,6 @@ def delete_audio_from_history(user_id, file_name, username):
             if os.path.exists(file_path):
                 os.remove(file_path)
                 st.success(f"Audio file '{file_name}' has been deleted from history and storage.")
-                st.rerun()
             else:
                 st.warning(f"Audio file '{file_name}' not found in storage.")
             
@@ -415,13 +451,15 @@ def apply_voice_conversion(audio_data, sr, voice_style, target_sr=96000):
         return audio_data
 
 def save_audio_file(file_name, audio_data, username):
-    user_folder = username  
-    timestamp = int(time.time())
-    unique_file_name = f"{file_name}"
+    user_folder = username
+    file_path = os.path.join("uploads", user_folder, file_name)
     
-    file_path = os.path.join("uploads", user_folder, unique_file_name)
+    if os.path.exists(file_path):
+        st.error(f"File '{file_name}' already exists. Please rename your file and try again.")
+        return None
+
     os.makedirs(os.path.dirname(file_path), exist_ok=True)
-    
+
     try:
         with open(file_path, "wb") as f:
             f.write(audio_data)
@@ -429,6 +467,26 @@ def save_audio_file(file_name, audio_data, username):
     except Exception as e:
         st.error(f"Error saving audio file: {e}")
         return None
+
+
+def save_audio_file_record(file_name, audio_data, username):
+    user_folder = username
+    timestamp = int(time.time())
+    unique_file_name = f"{file_name}"
+    
+    file_path = os.path.join("uploads", user_folder, unique_file_name)
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    
+    try:
+        audio_data = np.array(audio_data, dtype=np.float32)
+        with sf.SoundFile(file_path, mode='w', samplerate=96000, channels=1, subtype='PCM_16') as file:
+            file.write(audio_data)
+        return file_path
+    except Exception as e:
+        st.error(f"Error saving audio file: {e}")
+        return None
+
+
 def record_audio(duration):
     try:
         st.session_state.is_recording = True
@@ -496,12 +554,10 @@ def denoise_audio(audio_data, sr):
 
         tensor_audio = torch.tensor(audio_data, dtype=torch.float32).unsqueeze(0).to(device)
 
-        # Apply HTDemucs
         with torch.no_grad():
-            sources = apply_model(model, tensor_audio, device=device)  # Output shape: (batch, stems, channels, samples)
+            sources = apply_model(model, tensor_audio, device=device)  
 
-        # Extract the vocals or primary clean signal
-        enhanced_audio = sources[0, 0].cpu().numpy()  # Extract the "vocals" stem (channel 0)
+        enhanced_audio = sources[0, 0].cpu().numpy() 
 
         max_val = np.max(np.abs(enhanced_audio))
         if max_val > 0:
@@ -520,13 +576,13 @@ def denoise_audio(audio_data, sr):
 def audio_enhancement_ui():
     st.write("### Audio Enhancement")
     
-    source_option = st.radio("Choose Source", ["History Audio", "Saved Processed Audio"])
+    source_option = st.radio("Choose Source", ["Recents Audio", "Saved Audio"])
 
-    if source_option == "History Audio":
+    if source_option == "Recents Audio":
         user_id = st.session_state.user_id
         history_files = [row[0] for row in fetch_audio_history(user_id)]
         selected_file = st.selectbox("Select from History", history_files)
-    elif source_option == "Saved Processed Audio":
+    elif source_option == "Saved Audio":
         user_id = st.session_state.user_id
         saved_files = fetch_saved_processed_files(user_id)
         selected_file = st.selectbox("Select from Saved Processed Files", saved_files)
@@ -568,12 +624,10 @@ def audio_enhancement_ui():
                     if st.button("Save Enhanced Audio"):
                         save_audio_path = f"uploads/{st.session_state.username}/{filename}"
                         os.makedirs(os.path.dirname(save_audio_path), exist_ok=True)
-                        try:
-                            sf.write(save_audio_path, enhanced_audio.T, sr, format='WAV')
-                            store_processed_audio(st.session_state.user_id, filename, enhanced_audio)
-                            st.success(f"Enhanced audio saved as {filename}")
-                        except Exception as e:
-                            st.error(f"Error saving enhanced audio: {e}")
+                        sf.write(save_audio_path, enhanced_audio.T, sr, format='WAV')
+                        store_processed_audio(st.session_state.user_id, filename, enhanced_audio)
+                        st.success(f"Enhanced audio saved as {filename}")
+                        st.error(f"Error saving enhanced audio: {e}")
                 except Exception as e:
                     st.error(f"Error during audio processing: {e}")
         else:
@@ -608,7 +662,7 @@ def main():
             st.sidebar.header("Navigation")
             st.sidebar.write(f"Logged in as: {st.session_state.username}")
             
-            menu_options = st.sidebar.radio("Menu", ["Home", "Upload Audio", "Record Audio", "Audio Enhancement", "History", "Saved Audio"])
+            menu_options = st.sidebar.radio("Menu", ["Home", "Upload Audio", "Record Audio", "Audio Enhancement", "Recents", "Saved Audio"])
             
             if st.sidebar.button("Logout"):
                 st.session_state.logged_in = False
@@ -624,19 +678,21 @@ def main():
                 st.write("Upload a .wav file below:")
                 audio_file = st.file_uploader("Upload a .wav file", type=["wav"])
                 if audio_file:
-                    try:
                         st.session_state.audio_data, st.session_state.sr = librosa.load(audio_file, sr=None)
                         st.audio(audio_file, format='audio/wav')
                         username = st.session_state.username
-                        file_name = f"{username}_uploaded_audio_{int(time.time())}.wav"
-                        file_path = save_audio_file(file_name, audio_file.read(), username)
-                        if file_path:
-                            st.write(f"Audio file saved as: {file_name}")
-                            user_id = st.session_state.user_id
-                            store_audio(user_id, file_name, audio_file.read())
-                    except Exception as e:
-                        st.error(f"Error processing uploaded file: {e}")
-
+                        file_name = audio_file.name
+                        file_path = os.path.join("uploads", username, file_name)
+                     
+                        if os.path.exists(file_path):
+                           st.write(f"File {file_name} already exists.")
+                        else:
+                            file_path = save_audio_file(file_name, audio_file.read(), username)
+                            if file_path:
+                                st.write(f"Audio file saved as: {file_name}")
+                                user_id = st.session_state.user_id
+                                store_audio(user_id, file_name, audio_file.read())
+       
             elif menu_options == "Record Audio":
                 st.write("Record your audio using the microphone:")
                 st.session_state.recording_duration = st.slider("Recording Duration (seconds)", 1, 300, st.session_state.recording_duration)
@@ -649,19 +705,24 @@ def main():
                         st.session_state.is_recording = False
                         st.session_state.recorded_audio = None
                         st.write("Recording stopped early.")
+
                 if st.session_state.recorded_audio is not None:
-                    st.session_state.sr = 96000
-                    st.audio(st.session_state.recorded_audio, format='audio/wav', sample_rate=96000)
                     username = st.session_state.username
                     file_name = f"{username}_recorded_audio_{int(time.time())}.wav"
-                    st.session_state.audio_data = resample_audio(st.session_state.recorded_audio, sr=96000, target_sr=96000)
-                    file_path = save_audio_file(file_name, st.session_state.audio_data, username)
+
+                    file_path = save_audio_file_record(file_name, st.session_state.recorded_audio, username)
                     if file_path:
                         st.write(f"Audio file saved as: {file_name}")
                         user_id = st.session_state.user_id
-                        store_audio(user_id, file_name, st.session_state.audio_data)
+                        store_audio(user_id, file_name, st.session_state.recorded_audio)
+                        st.session_state.audio_data = None
+                        st.session_state.recorded_audio = None
+
                     byte_io = io.BytesIO()
-                    sf.write(byte_io, st.session_state.audio_data, 96000, format='WAV')
+                    audio_data = np.array(st.session_state.recorded_audio, dtype=np.float32)
+
+                    with sf.SoundFile(byte_io, 'w', format='WAV', samplerate=96000, channels=1, subtype='PCM_16') as file:
+                        file.write(audio_data)                    
                     byte_io.seek(0)
                     st.download_button("Download Recorded Audio in HD", byte_io, file_name)
 
@@ -669,28 +730,27 @@ def main():
                  audio_enhancement_ui()
 
 
-            elif menu_options == "History":
+            elif menu_options == "Recents":
                 st.write("Select and manage your audio history:")
                 user_id = st.session_state.user_id
                 history_files = [row[0] for row in fetch_audio_history(user_id)]
                 selected_file = st.selectbox("Select from history", history_files)
                 if selected_file:
-                    st.write(f"Selected file: {selected_file}")
-                    try:
+                        st.write(f"Selected file: {selected_file}")
                         user_audio_path = f"uploads/{st.session_state.username}/{selected_file}"
+                       
                         if os.path.exists(user_audio_path):
-                            try:
                                 st.session_state.audio_data, st.session_state.sr = librosa.load(user_audio_path, sr=None)
-                                delete_button = st.button("Delete Audio from History and Storage")
-                                if delete_button:
-                                    delete_audio_from_history(user_id, selected_file, st.session_state.username)
                                 st.audio(st.session_state.audio_data, format='audio/wav', sample_rate=st.session_state.sr)
-                            except Exception as e:
-                                st.error(f"Error loading audio with librosa: {e}")
+
+                                delete_button = st.button("Delete Audio from History and Storage")
+                                if delete_button:                                    
+                                    delete_audio_from_history(user_id, selected_file, st.session_state.username)
+                                    st.rerun()
+                               
                         else:
                             st.error(f"Audio file {selected_file} not found in the specified folder.")
-                    except Exception as e:
-                        st.error(f"Error loading audio from history: {e}")
+                
 
             elif menu_options == "Saved Audio":
                 st.write("Your saved processed audio:")
@@ -700,21 +760,24 @@ def main():
                     if selected_saved_file:
                         st.write(f"Selected file: {selected_saved_file}")
                         saved_audio_path = f"uploads/{st.session_state.username}/{selected_saved_file}"
+                     
                         if os.path.exists(saved_audio_path):
-                            try:
+                           
                                 processed_audio, sr = librosa.load(saved_audio_path, sr=None)
                                 st.audio(processed_audio, format='audio/wav', sample_rate=sr)
+                              
                                 delete_button = st.button("Delete Saved Audio")
                                 if delete_button:
-                                    delete_saved_audio(st.session_state.user_id, selected_saved_file)
-                                    os.remove(saved_audio_path)
-                                    st.success(f"{selected_saved_file} has been deleted.")
-                            except Exception as e:
-                                st.error(f"Error loading saved audio file: {e}")
+                                    delete_saved_processed_audio(st.session_state.user_id, selected_saved_file)
+                                    st.rerun()    
+                    else:
+                        st.error(f"Audio file {selected_saved_file} not found in the specified folder.")
                 else:
                     st.write("No saved audio files found.")
+                    selected_saved_file = None
+                
 
-            if st.session_state.audio_data is not None and menu_options != "Audio Enhancement":
+            if st.session_state.audio_data is not None and (menu_options != "Audio Enhancement" or menu_options == "Record Audio"):
                 st.write("Process your audio below:")
                 voice_style = st.selectbox("Choose Voice Style", list(load_voice_styles().keys()))
                 if voice_style != "None":
@@ -738,7 +801,7 @@ def main():
                     sf.write(output, processed_audio, 96000, format='WAV')
                     output.seek(0)
                     filename = f"{st.session_state.username}_{voice_style.replace(' ', '_')}_processed_audio.wav"
-                    st.audio(output, format='audio/wav')
+                    st.audio(processed_audio, format='audio/wav', sample_rate=96000)
                     st.download_button("Download Processed Audio", output, file_name=filename)
                     if st.button("Save Processed Audio"):
                         save_audio_path = f"uploads/{st.session_state.username}/{filename}"
@@ -749,6 +812,7 @@ def main():
                                 st.success(f"Processed audio saved as {filename}")
                         except Exception as e:
                             st.error(f"Error saving processed audio: {e}")
+                    st.session_state.audio_data = None
 
         else:
             st.sidebar.header("Login or Register")
@@ -774,6 +838,7 @@ def main():
                     st.rerun()
                 else:
                     st.error("Invalid username or password.")
+        
     except KeyboardInterrupt:
         print("Stopping Flask application...")
         stop_flask(flask_process)
